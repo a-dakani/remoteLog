@@ -1,4 +1,6 @@
 .idea
 *.exe
 *.log
-*.yaml
+config.services.yaml
+*.conf
+build

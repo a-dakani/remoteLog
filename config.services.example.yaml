@@ -1,0 +1,13 @@
+#Example Services Config
+services:
+    - name: spyName
+      host: spyHost.live.com
+      user: spyUser
+      port: 22
+      #private_key_path: ~/.ssh/id_rsa
+      krb5_conf_path: /etc/kerb5.conf
+      files:
+          - alias: spy-1
+            path: /var/log/spyPath.log
+          - alias: spy-2
+            path: /var/log/spyPath.log

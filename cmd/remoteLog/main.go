@@ -2,9 +2,9 @@ package main
 
 import (
 	"flag"
-	"github.com/a-dakani/LogSpy/configs"
-	"github.com/a-dakani/LogSpy/logger"
-	"github.com/a-dakani/LogSpy/ssh"
+	"github.com/a-dakani/remoteLog/configs"
+	"github.com/a-dakani/remoteLog/pkg/ssh"
+	"github.com/a-dakani/remoteLog/pkg/utils"
 	"reflect"
 	"strings"
 )
@@ -22,22 +22,35 @@ var host = flag.String("h", "", "host to connect to -h=192.168.1.1")
 var user = flag.String("u", "", "user to connect to host -u=admin")
 var port = flag.Int("p", 22, "port to connect to host -p=22")
 var privateKey = flag.String("pk", "", "private key location to connect to host -pk=/home/user/.ssh/id_rsa")
+var krb5Conf = flag.String("krb5", "", "krb5.conf location to connect to host -krb5=/etc/krb5.conf")
 var filterWords = flag.String("f", "", "filter for the log files -f=ERROR,WARN,FATAL,EXCEPTION")
 
 func init() {
 	flag.Parse()
-	configs.LoadConfig(&cfg)
+
+	err := utils.LoadConfig(&cfg)
+	if err != nil {
+		panic(err)
+	}
+
 	if *service != "" {
-		configs.LoadServices(&srvs)
+		err = utils.LoadServices(&srvs)
+		if err != nil {
+			panic(err)
+		}
+
 		for _, confSrv := range srvs.Services {
 			if confSrv.Name == *service {
 				srv = confSrv
 				break
 			}
 		}
+
 		if reflect.DeepEqual(srv, configs.Service{}) {
-			logger.Fatal("Service not found in config.services.yaml")
+			utils.Fatal("Service not found in config.services.yaml")
+			panic("Service not found in config.services.yaml")
 		}
+
 	} else {
 		srv = configs.Service{
 			Name:           "ArgService",
@@ -45,42 +58,39 @@ func init() {
 			User:           *user,
 			Port:           *port,
 			PrivateKeyPath: *privateKey,
-			Files:          strings.Split(*files, ","),
+			Krb5ConfPath:   *krb5Conf,
+			Files:          configs.ParseFiles(*files),
 		}
-		if !srv.IsFullyConfigured() {
-			logger.ProcessArgumentError()
-
+		if _, err = srv.IsFullyConfigured(); err != nil {
+			utils.ProcessArgumentError()
+			panic(err)
 		}
 	}
 	filters = strings.Split(*filterWords, ",")
 
 	if filters[0] == "" && len(filters) == 1 {
-		logger.Warning("No filter words provided. Proceeding without filters")
+		utils.Warning("No filter words provided. Proceeding without filters")
 	} else {
-		logger.Info("Filter words provided:" + *filterWords)
+		utils.Info("Filter words provided:" + *filterWords)
 	}
 }
 
 func main() {
-	client := ssh.Client{
-		Service:  srv,
-		Password: "test",
+	s := ssh.Spy{
+		Service: srv,
 	}
-	err := client.DialClient()
+	err := s.CreateClient()
 	if err != nil {
-		logger.Fatal(err.Error())
-		return
+		utils.Fatal(err.Error())
+		panic(err)
 	}
-	err = client.GetSession()
-	if err != nil {
-		logger.Fatal(err.Error())
-		return
-	}
-	output, err := client.Session.CombinedOutput("pwd")
-	if err != nil {
-		logger.Fatal(err.Error())
-		return
-	}
+	defer s.CloseClient()
 
-	logger.Info(string(output))
+	err = s.TailFiles()
+	if err != nil {
+		utils.Warning(err.Error())
+		panic(err)
+	}
+	defer s.CloseSessions()
+
 }
